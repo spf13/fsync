@@ -29,10 +29,11 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"runtime"
+
+	"github.com/spf13/afero"
 )
 
 var (
@@ -59,17 +60,20 @@ type Syncer struct {
 	// setting this to true.
 	NoTimes bool
 	// TODO add options for not checking content for equality
+
+	SrcFs  afero.Fs
+	DestFs afero.Fs
 }
 
 // NewSyncer creates a new instance of Syncer with default options.
 func NewSyncer() *Syncer {
-	return &Syncer{}
+	return &Syncer{SrcFs: new(afero.OsFs), DestFs: new(afero.OsFs)}
 }
 
 // Sync copies files and directories inside src into dst.
 func (s *Syncer) Sync(dst, src string) error {
 	// make sure src exists
-	if _, err := os.Stat(src); err != nil {
+	if _, err := s.SrcFs.Stat(src); err != nil {
 		return err
 	}
 	// return error instead of replacing a non-empty directory with a file
@@ -114,11 +118,11 @@ func (s *Syncer) sync(dst, src string) {
 	defer s.syncstats(dst, src)
 
 	// read files info
-	dstat, err := os.Stat(dst)
+	dstat, err := s.SrcFs.Stat(dst)
 	if err != nil && !os.IsNotExist(err) {
 		panic(err)
 	}
-	sstat, err := os.Stat(src)
+	sstat, err := s.SrcFs.Stat(src)
 	if err != nil && os.IsNotExist(err) {
 		return // src was deleted before we could copy it
 	}
@@ -128,14 +132,14 @@ func (s *Syncer) sync(dst, src string) {
 		// src is a file
 		// delete dst if its a directory
 		if dstat != nil && dstat.IsDir() {
-			check(os.RemoveAll(dst))
+			check(s.DestFs.RemoveAll(dst))
 		}
 		if !s.equal(dst, src) {
 			// perform copy
-			df, err := os.Create(dst)
+			df, err := s.DestFs.Create(dst)
 			check(err)
 			defer df.Close()
-			sf, err := os.Open(src)
+			sf, err := s.SrcFs.Open(src)
 			if os.IsNotExist(err) {
 				return
 			}
@@ -154,15 +158,15 @@ func (s *Syncer) sync(dst, src string) {
 	// make dst if necessary
 	if dstat == nil {
 		// dst does not exist; create directory
-		check(os.MkdirAll(dst, 0755)) // permissions will be synced later
+		check(s.DestFs.MkdirAll(dst, 0755)) // permissions will be synced later
 	} else if !dstat.IsDir() {
 		// dst is a file; remove and create directory
-		check(os.Remove(dst))
-		check(os.MkdirAll(dst, 0755)) // permissions will be synced later
+		check(s.DestFs.Remove(dst))
+		check(s.DestFs.MkdirAll(dst, 0755)) // permissions will be synced later
 	}
 
 	// go through sf files and sync them
-	files, err := ioutil.ReadDir(src)
+	files, err := afero.ReadDir(src, s.SrcFs)
 	if os.IsNotExist(err) {
 		return
 	}
@@ -179,11 +183,11 @@ func (s *Syncer) sync(dst, src string) {
 
 	// delete files from dst that does not exist in src
 	if s.Delete {
-		files, err = ioutil.ReadDir(dst)
+		files, err = afero.ReadDir(dst, s.DestFs)
 		check(err)
 		for _, file := range files {
 			if !m[file.Name()] {
-				check(os.RemoveAll(path.Join(dst, file.Name())))
+				check(s.DestFs.RemoveAll(path.Join(dst, file.Name())))
 			}
 		}
 	}
@@ -192,8 +196,8 @@ func (s *Syncer) sync(dst, src string) {
 // syncstats makes sure dst has the same pemissions and modification time as src
 func (s *Syncer) syncstats(dst, src string) {
 	// get file infos; return if not exist and panic if error
-	dstat, err1 := os.Stat(dst)
-	sstat, err2 := os.Stat(src)
+	dstat, err1 := s.DestFs.Stat(dst)
+	sstat, err2 := s.SrcFs.Stat(src)
 	if os.IsNotExist(err1) || os.IsNotExist(err2) {
 		return
 	}
@@ -202,7 +206,7 @@ func (s *Syncer) syncstats(dst, src string) {
 
 	// update dst's permission bits
 	if dstat.Mode().Perm() != sstat.Mode().Perm() {
-		check(os.Chmod(dst, sstat.Mode().Perm()))
+		check(s.DestFs.Chmod(dst, sstat.Mode().Perm()))
 		return
 	}
 
@@ -287,7 +291,8 @@ func (s *Syncer) checkDir(dst, src string) (b bool, err error) {
 	// dst is a directory and src is a file
 	// check if dst is non-empty
 	// read dst directory
-	files, err := ioutil.ReadDir(dst)
+
+	files, err := afero.ReadDir(dst, s.DestFs)
 	if err != nil {
 		return false, err
 	}
