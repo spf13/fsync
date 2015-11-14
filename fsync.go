@@ -207,7 +207,6 @@ func (s *Syncer) syncstats(dst, src string) {
 	// update dst's permission bits
 	if dstat.Mode().Perm() != sstat.Mode().Perm() {
 		check(s.DestFs.Chmod(dst, sstat.Mode().Perm()))
-		return
 	}
 
 	// update dst's modification time
