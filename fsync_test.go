@@ -21,9 +21,10 @@ func TestSync(t *testing.T) {
 	// set times in the past to make sure times are synced, not accidentally
 	// the same
 	tt := time.Now().Add(-1 * time.Hour)
-	check(os.Chtimes("src/a", tt, tt))
 	check(os.Chtimes("src/a/b", tt, tt))
+	check(os.Chtimes("src/a", tt, tt))
 	check(os.Chtimes("src/c", tt, tt))
+	check(os.Chtimes("src", tt, tt))
 
 	// create Syncer
 	s := NewSyncer()
@@ -36,14 +37,19 @@ func TestSync(t *testing.T) {
 	testDirContents("dst/a", 1, t)
 	testFile("dst/a/b", []byte("file b"), t)
 	testFile("dst/c", []byte("file c"), t)
-	testPerms("dst", 0755, t)
-	testPerms("dst/a", 0755, t)
-	testPerms("dst/a/b", 0644, t)
-	testPerms("dst/c", 0644, t)
-	testModTime("dst", getModTime("src"), t)
+	testPerms("dst/a", getPerms("src/a"), t)
+	testPerms("dst/a/b", getPerms("src/a/b"), t)
+	testPerms("dst/c", getPerms("src/c"), t)
 	testModTime("dst/a", getModTime("src/a"), t)
 	testModTime("dst/a/b", getModTime("src/a/b"), t)
 	testModTime("dst/c", getModTime("src/c"), t)
+
+	// sync the parent directory too
+	check(s.Sync("dst", "src"))
+
+	// check the results
+	testPerms("dst", getPerms("src"), t)
+	testModTime("dst", getModTime("src"), t)
 
 	// modify src
 	check(ioutil.WriteFile("src/a/b", []byte("file b changed"), 0644))
@@ -54,7 +60,8 @@ func TestSync(t *testing.T) {
 
 	// check results
 	testFile("dst/a/b", []byte("file b changed"), t)
-	testPerms("dst/a", 0775, t)
+	testPerms("dst/a", getPerms("src/a"), t)
+	testModTime("dst", getModTime("src"), t)
 	testModTime("dst/a", getModTime("src/a"), t)
 	testModTime("dst/a/b", getModTime("src/a/b"), t)
 	testModTime("dst/c", getModTime("src/c"), t)
@@ -120,21 +127,25 @@ func testDirContents(name string, count int, t *testing.T) {
 }
 
 func testPerms(name string, p os.FileMode, t *testing.T) {
-	info, err := os.Stat(name)
-	check(err)
-	if info.Mode().Perm() != p {
+	p2 := getPerms(name)
+	if p2 != p {
 		t.Errorf("permissions for \"%s\" is %v, should be %v.\n",
-			name, info.Mode().Perm(), p)
+			name, p2, p)
 	}
 }
 
 func testModTime(name string, m time.Time, t *testing.T) {
+	m2 := getModTime(name)
+	if !m2.Equal(m) {
+		t.Errorf("modification time for \"%s\" is %v, should be %v.\n",
+			name, m2, m)
+	}
+}
+
+func getPerms(name string) os.FileMode {
 	info, err := os.Stat(name)
 	check(err)
-	if !info.ModTime().Equal(m) {
-		t.Errorf("modification time for \"%s\" is %v, should be %v.\n",
-			name, info.ModTime(), m)
-	}
+	return info.Mode().Perm()
 }
 
 func getModTime(name string) time.Time {
