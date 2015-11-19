@@ -31,6 +31,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 
 	"github.com/spf13/afero"
@@ -89,7 +90,7 @@ func (s *Syncer) Sync(dst, src string) error {
 // SyncTo syncs srcs files or directories into to directory.
 func (s *Syncer) SyncTo(to string, srcs ...string) error {
 	for _, src := range srcs {
-		dst := path.Join(to, path.Base(src))
+		dst := filepath.Join(to, path.Base(src))
 		if err := s.Sync(dst, src); err != nil {
 			return err
 		}
@@ -175,8 +176,8 @@ func (s *Syncer) sync(dst, src string) {
 	// deletion below
 	m := make(map[string]bool, len(files))
 	for _, file := range files {
-		dst2 := path.Join(dst, file.Name())
-		src2 := path.Join(src, file.Name())
+		dst2 := filepath.Join(dst, file.Name())
+		src2 := filepath.Join(src, file.Name())
 		s.sync(dst2, src2)
 		m[file.Name()] = true
 	}
@@ -187,7 +188,7 @@ func (s *Syncer) sync(dst, src string) {
 		check(err)
 		for _, file := range files {
 			if !m[file.Name()] {
-				check(s.DestFs.RemoveAll(path.Join(dst, file.Name())))
+				check(s.DestFs.RemoveAll(filepath.Join(dst, file.Name())))
 			}
 		}
 	}
