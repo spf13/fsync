@@ -1,3 +1,6 @@
+// Copyright (C) 2012 Mostafa Hajizadeh
+// Copyright (C) 2014-5 Steve Francia
+
 // package fsync keeps two files or directories in sync.
 //
 //         err := fsync.Sync("~/dst", ".")
@@ -7,11 +10,11 @@
 // will only copy changed or new files.
 //
 // SyncTo is a helper function which helps you sync a groups of files or
-// directories into a signle destination. For instance, calling
+// directories into a single destination. For instance, calling
 //
 //     SyncTo("public", "build/app.js", "build/app.css", "images", "fonts")
 //
-// is equivalient to calling
+// is equivalent to calling
 //
 //     Sync("public/app.js", "build/app.js")
 //     Sync("public/app.css", "build/app.css")
@@ -23,6 +26,7 @@
 // By default, sync code ignores extra files in the destination that don’t have
 // identicals in the source. Setting Delete field of a Syncer to true changes
 // this behavior and deletes these extra files.
+
 package fsync
 
 import (
@@ -167,7 +171,7 @@ func (s *Syncer) sync(dst, src string) {
 	}
 
 	// go through sf files and sync them
-	files, err := afero.ReadDir(src, s.SrcFs)
+	files, err := afero.ReadDir(s.SrcFs, src)
 	if os.IsNotExist(err) {
 		return
 	}
@@ -184,7 +188,7 @@ func (s *Syncer) sync(dst, src string) {
 
 	// delete files from dst that does not exist in src
 	if s.Delete {
-		files, err = afero.ReadDir(dst, s.DestFs)
+		files, err = afero.ReadDir(s.DestFs, dst)
 		check(err)
 		for _, file := range files {
 			if !m[file.Name()] {
@@ -292,7 +296,7 @@ func (s *Syncer) checkDir(dst, src string) (b bool, err error) {
 	// check if dst is non-empty
 	// read dst directory
 
-	files, err := afero.ReadDir(dst, s.DestFs)
+	files, err := afero.ReadDir(s.DestFs, dst)
 	if err != nil {
 		return false, err
 	}
