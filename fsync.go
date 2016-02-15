@@ -123,7 +123,7 @@ func (s *Syncer) sync(dst, src string) {
 	defer s.syncstats(dst, src)
 
 	// read files info
-	dstat, err := s.SrcFs.Stat(dst)
+	dstat, err := s.DestFs.Stat(dst)
 	if err != nil && !os.IsNotExist(err) {
 		panic(err)
 	}
