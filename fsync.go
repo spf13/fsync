@@ -276,13 +276,13 @@ func (s *Syncer) equal(a, b string) bool {
 // checkDir returns true if dst is a non-empty directory and src is a file
 func (s *Syncer) checkDir(dst, src string) (b bool, err error) {
 	// read file info
-	dstat, err := os.Stat(dst)
+	dstat, err := s.DestFs.Stat(dst)
 	if os.IsNotExist(err) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
-	sstat, err := os.Stat(src)
+	sstat, err := s.SrcFs.Stat(src)
 	if err != nil {
 		return false, err
 	}
