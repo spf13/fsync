@@ -223,11 +223,11 @@ func (s *Syncer) syncstats(dst, src string) {
 	}
 }
 
-// equal returns true if both files are equal
-func (s *Syncer) equal(a, b string) bool {
+// equal returns true if both dst and src files are equal
+func (s *Syncer) equal(dst, src string) bool {
 	// get file infos
-	info1, err1 := os.Stat(a)
-	info2, err2 := os.Stat(b)
+	info1, err1 := s.DestFs.Stat(dst)
+	info2, err2 := s.SrcFs.Stat(src)
 	if os.IsNotExist(err1) || os.IsNotExist(err2) {
 		return false
 	}
@@ -240,10 +240,10 @@ func (s *Syncer) equal(a, b string) bool {
 	}
 
 	// both have the same size, check the contents
-	f1, err := os.Open(a)
+	f1, err := s.DestFs.Open(dst)
 	check(err)
 	defer f1.Close()
-	f2, err := os.Open(b)
+	f2, err := s.SrcFs.Open(src)
 	check(err)
 	defer f2.Close()
 	buf1 := make([]byte, 1000)
