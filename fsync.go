@@ -34,7 +34,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 
@@ -94,7 +93,7 @@ func (s *Syncer) Sync(dst, src string) error {
 // SyncTo syncs srcs files or directories into to directory.
 func (s *Syncer) SyncTo(to string, srcs ...string) error {
 	for _, src := range srcs {
-		dst := filepath.Join(to, path.Base(src))
+		dst := filepath.Join(to, filepath.Base(src))
 		if err := s.Sync(dst, src); err != nil {
 			return err
 		}
