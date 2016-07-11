@@ -38,6 +38,8 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/spf13/afero"
 )
 
@@ -180,10 +182,12 @@ func (s *Syncer) sync(dst, src string) {
 	// deletion below
 	m := make(map[string]bool, len(files))
 	for _, file := range files {
-		dst2 := filepath.Join(dst, file.Name())
-		src2 := filepath.Join(src, file.Name())
+		filename := normalizeFilename(file.Name())
+
+		dst2 := filepath.Join(dst, filename)
+		src2 := filepath.Join(src, filename)
 		s.sync(dst2, src2)
-		m[file.Name()] = true
+		m[filename] = true
 	}
 
 	// delete files from dst that does not exist in src
@@ -191,11 +195,20 @@ func (s *Syncer) sync(dst, src string) {
 		files, err = afero.ReadDir(s.DestFs, dst)
 		check(err)
 		for _, file := range files {
-			if !m[file.Name()] {
-				check(s.DestFs.RemoveAll(filepath.Join(dst, file.Name())))
+			filename := normalizeFilename(file.Name())
+			if !m[filename] {
+				check(s.DestFs.RemoveAll(filepath.Join(dst, filename)))
 			}
 		}
 	}
+}
+
+func normalizeFilename(filename string) string {
+	if runtime.GOOS == "darwin" {
+		// When a file system is HFS+, its filepath is in NFD form.
+		return norm.NFC.String(filename)
+	}
+	return filename
 }
 
 // syncstats makes sure dst has the same pemissions and modification time as src
