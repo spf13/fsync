@@ -63,6 +63,9 @@ type Syncer struct {
 	// By default, modification times are synced. This can be turned off by
 	// setting this to true.
 	NoTimes bool
+	// NoChmod disables permission mode syncing.
+	NoChmod bool
+
 	// TODO add options for not checking content for equality
 
 	SrcFs  afero.Fs
@@ -209,8 +212,10 @@ func (s *Syncer) syncstats(dst, src string) {
 	check(err2)
 
 	// update dst's permission bits
-	if dstat.Mode().Perm() != sstat.Mode().Perm() {
-		check(s.DestFs.Chmod(dst, sstat.Mode().Perm()))
+	if !s.NoChmod {
+		if dstat.Mode().Perm() != sstat.Mode().Perm() {
+			check(s.DestFs.Chmod(dst, sstat.Mode().Perm()))
+		}
 	}
 
 	// update dst's modification time
