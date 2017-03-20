@@ -60,6 +60,9 @@ type Syncer struct {
 	// Set this to true to delete files in the destination that don't exist
 	// in the source.
 	Delete bool
+	// To allow certain files to remain in the destination, implement this function.
+	// Return true to skip file, false to delete.
+	DeleteFilter func(f os.FileInfo) bool
 	// By default, modification times are synced. This can be turned off by
 	// setting this to true.
 	NoTimes bool
@@ -74,7 +77,11 @@ type Syncer struct {
 
 // NewSyncer creates a new instance of Syncer with default options.
 func NewSyncer() *Syncer {
-	return &Syncer{SrcFs: new(afero.OsFs), DestFs: new(afero.OsFs)}
+	s := Syncer{SrcFs: new(afero.OsFs), DestFs: new(afero.OsFs)}
+	s.DeleteFilter = func(f os.FileInfo) bool {
+		return false
+	}
+	return &s
 }
 
 // Sync copies files and directories inside src into dst.
@@ -193,7 +200,7 @@ func (s *Syncer) sync(dst, src string) {
 		files, err = afero.ReadDir(s.DestFs, dst)
 		check(err)
 		for _, file := range files {
-			if !m[file.Name()] {
+			if !m[file.Name()] && !s.DeleteFilter(file) {
 				check(s.DestFs.RemoveAll(filepath.Join(dst, file.Name())))
 			}
 		}
