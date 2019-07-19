@@ -68,6 +68,9 @@ type Syncer struct {
 	NoTimes bool
 	// NoChmod disables permission mode syncing.
 	NoChmod bool
+	// Implement this function to skip Chmod syncing for only certain files
+	// or directories. Return true to skip Chmod.
+	ChmodFilter func(dst, src os.FileInfo) bool
 
 	// TODO add options for not checking content for equality
 
@@ -219,7 +222,11 @@ func (s *Syncer) syncstats(dst, src string) {
 	check(err2)
 
 	// update dst's permission bits
-	if !s.NoChmod {
+	noChmod := s.NoChmod
+	if !noChmod && s.ChmodFilter != nil {
+		noChmod = s.ChmodFilter(dstat, sstat)
+	}
+	if !noChmod {
 		if dstat.Mode().Perm() != sstat.Mode().Perm() {
 			check(s.DestFs.Chmod(dst, sstat.Mode().Perm()))
 		}
