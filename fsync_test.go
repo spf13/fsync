@@ -111,10 +111,7 @@ func TestDeleteFileFilter(t *testing.T) {
 	s.Delete = true
 
 	s.DeleteFilter = func(f os.FileInfo) bool {
-		if f.Name() == "d" {
-			return true
-		}
-		return false
+		return f.Name() == "d"
 	}
 
 	//precondition; dst contains 2 files `c` and `d`

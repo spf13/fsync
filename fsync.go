@@ -1,5 +1,5 @@
 // Copyright (C) 2012 Mostafa Hajizadeh
-// Copyright (C) 2014-5 Steve Francia
+// Copyright (C) 2014-2022 Steve Francia
 
 // package fsync keeps two files or directories in sync.
 //
