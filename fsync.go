@@ -41,10 +41,8 @@ import (
 	"github.com/spf13/afero"
 )
 
-var (
-	ErrFileOverDir = errors.New(
-		"fsync: trying to overwrite a non-empty directory with a file")
-)
+var ErrFileOverDir = errors.New(
+	"fsync: trying to overwrite a non-empty directory with a file")
 
 // FileInfo contains the shared methods between os.FileInfo and fs.DirEntry.
 type FileInfo interface {
@@ -126,10 +124,14 @@ func (s *Syncer) SyncTo(to string, srcs ...string) error {
 func (s *Syncer) syncRecover(dst, src string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if _, ok := r.(runtime.Error); ok {
+			switch r := r.(type) {
+			case runtime.Error:
+				panic(r)
+			case error:
+				err = r
+			default:
 				panic(r)
 			}
-			err = r.(error)
 		}
 	}()
 
@@ -183,11 +185,11 @@ func (s *Syncer) sync(dst, src string) {
 	// make dst if necessary
 	if dstat == nil {
 		// dst does not exist; create directory
-		check(s.DestFs.MkdirAll(dst, 0755)) // permissions will be synced later
+		check(s.DestFs.MkdirAll(dst, 0o755)) // permissions will be synced later
 	} else if !dstat.IsDir() {
 		// dst is a file; remove and create directory
 		check(s.DestFs.Remove(dst))
-		check(s.DestFs.MkdirAll(dst, 0755)) // permissions will be synced later
+		check(s.DestFs.MkdirAll(dst, 0o755)) // permissions will be synced later
 	}
 
 	// make a map of filenames for quick lookup; used in deletion
