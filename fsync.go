@@ -82,6 +82,8 @@ type Syncer struct {
 
 	SrcFs  afero.Fs
 	DestFs afero.Fs
+
+	checkContents func(s *Syncer, dst, src string) bool
 }
 
 // NewSyncer creates a new instance of Syncer with default options.
@@ -90,6 +92,7 @@ func NewSyncer() *Syncer {
 	s.DeleteFilter = func(f FileInfo) bool {
 		return false
 	}
+	s.checkContents = defaultCheckContents
 	return &s
 }
 
@@ -266,6 +269,10 @@ func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
 	}
 
 	// both have the same size, check the contents
+	return s.checkContents(s, dst, src)
+}
+
+func defaultCheckContents(s *Syncer, dst, src string) bool {
 	f1, err := s.DestFs.Open(dst)
 	check(err)
 	defer f1.Close()
