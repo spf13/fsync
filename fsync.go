@@ -259,16 +259,18 @@ func (s *Syncer) syncstats(dst, src string) {
 
 // equal returns true if both dst and src files are equal
 func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
+	// if at least one of the files doesn't exist, they can't be equal
 	if sstat == nil || dstat == nil {
 		return false
 	}
 
-	// check sizes
-	if dstat.Size() != sstat.Size() {
-		return false
+	// if they're the same file, they're obviously the same, irrespective of whether
+	// we dealt with differently-canonicalised filenames, symlinks or hard links
+	if os.SameFile(sstat, dstat) {
+		return true
 	}
 
-	// both have the same size, check the contents
+	// they might have the same contents even if they're different files
 	return s.checkContents(s, dst, src)
 }
 
