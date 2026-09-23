@@ -42,7 +42,8 @@ import (
 )
 
 var ErrFileOverDir = errors.New(
-	"fsync: trying to overwrite a non-empty directory with a file")
+	"fsync: trying to overwrite a non-empty directory with a file",
+)
 
 // FileInfo contains the shared methods between os.FileInfo and fs.DirEntry.
 type FileInfo interface {
@@ -268,6 +269,11 @@ func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
 	// we dealt with differently-canonicalised filenames, symlinks or hard links
 	if os.SameFile(sstat, dstat) {
 		return true
+	}
+
+	// check sizes
+	if dstat.Size() != sstat.Size() {
+		return false
 	}
 
 	// they might have the same contents even if they're different files
