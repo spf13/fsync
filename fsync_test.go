@@ -251,9 +251,7 @@ func getModTime(name string) time.Time {
 }
 
 func BenchmarkSync(b *testing.B) {
-	tempDir := b.TempDir()
-
-	createSomeFiles := func(dirname string) {
+	createSomeFilesIn := func(tempDir, dirname string) {
 		for i := 0; i < 5; i++ {
 			f, err := os.Create(filepath.Join(tempDir, dirname, fmt.Sprintf("test%d.txt", i)))
 			if err != nil {
@@ -262,25 +260,27 @@ func BenchmarkSync(b *testing.B) {
 			f.Close()
 		}
 	}
-
-	depth := 5
-	for level := depth; level > 0; level-- {
-		dirname := ""
-		for i := 0; i < level; i++ {
-			dirname = filepath.Join(dirname, fmt.Sprintf("dir%d", i))
-			err := os.MkdirAll(filepath.Join(tempDir, dirname), 0o755)
-			if err != nil && !os.IsExist(err) {
-				b.Fatal(err)
+	createSomeFiles := func() string {
+		tempDir := b.TempDir()
+		depth := 5
+		for level := depth; level > 0; level-- {
+			dirname := ""
+			for i := 0; i < level; i++ {
+				dirname = filepath.Join(dirname, fmt.Sprintf("dir%d", i))
+				err := os.MkdirAll(filepath.Join(tempDir, dirname), 0o755)
+				if err != nil && !os.IsExist(err) {
+					b.Fatal(err)
+				}
 			}
+			createSomeFilesIn(tempDir, dirname)
 		}
-		createSomeFiles(dirname)
-	}
 
-	src := tempDir
-	b.ResetTimer()
+		return tempDir
+	}
 
 	b.Run("No changes", func(b *testing.B) {
 		dst := b.TempDir()
+		src := createSomeFiles()
 		s := NewSyncer()
 		check(s.SyncTo(dst, filepath.Join(src, "dir0")))
 		b.ResetTimer()
@@ -292,13 +292,12 @@ func BenchmarkSync(b *testing.B) {
 
 	b.Run("Empty dst", func(b *testing.B) {
 		for b.Loop() {
-			dst := b.TempDir()
-			s := NewSyncer()
-			check(s.SyncTo(dst, filepath.Join(src, "dir0")))
 			b.StopTimer()
-			check(os.RemoveAll(src))
-			src = dst
+			dst := b.TempDir()
+			src := createSomeFiles()
+			s := NewSyncer()
 			b.StartTimer()
+			check(s.SyncTo(dst, filepath.Join(src, "dir0")))
 		}
 	})
 }
