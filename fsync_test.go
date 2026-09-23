@@ -118,7 +118,7 @@ func TestFileOverDirSameSize(t *testing.T) {
 
 func TestEquality(t *testing.T) {
 	dir := t.TempDir()
-	check(os.Chdir(dir))
+	t.Chdir(dir)
 
 	// a file should obviously be equal to itself
 	check(os.MkdirAll("src/", 0o755))
@@ -150,7 +150,7 @@ func TestEquality(t *testing.T) {
 func TestDeleteFileFilter(t *testing.T) {
 	// create test directory and chdir to it
 	dir := t.TempDir()
-	check(os.Chdir(dir))
+	t.Chdir(dir)
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
@@ -186,7 +186,7 @@ func TestDeleteFileFilter(t *testing.T) {
 func TestDeleteFileFilterNotSet(t *testing.T) {
 	// create test directory and chdir to it
 	dir := t.TempDir()
-	check(os.Chdir(dir))
+	t.Chdir(dir)
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
