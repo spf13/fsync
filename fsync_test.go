@@ -3,7 +3,6 @@ package fsync
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,14 +13,13 @@ import (
 
 func TestSync(t *testing.T) {
 	// create test directory and chdir to it
-	dir, err := ioutil.TempDir(os.TempDir(), "fsync_test")
-	check(err)
-	check(os.Chdir(dir))
+	dir := t.TempDir()
+	t.Chdir(dir)
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
-	check(ioutil.WriteFile("src/c", []byte("file c"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(os.WriteFile("src/c", []byte("file c"), 0o644))
 	// set times in the past to make sure times are synced, not accidentally
 	// the same
 	tt := time.Now().Add(-1 * time.Hour)
@@ -56,7 +54,7 @@ func TestSync(t *testing.T) {
 	testModTime("dst", getModTime("src"), t)
 
 	// modify src
-	check(ioutil.WriteFile("src/a/b", []byte("file b changed"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b changed"), 0o644))
 	check(os.Chmod("src/a", 0o775))
 
 	// sync
@@ -89,7 +87,7 @@ func TestSync(t *testing.T) {
 	testExistence("dst/c", false, t)
 
 	s.Delete = false
-	if err = s.Sync("dst", "src/a/b"); err == nil {
+	if err := s.Sync("dst", "src/a/b"); err == nil {
 		t.Errorf("expecting ErrFileOverDir, got nothing.\n")
 	} else if err != nil && err != ErrFileOverDir {
 		panic(err)
@@ -151,17 +149,16 @@ func TestEquality(t *testing.T) {
 
 func TestDeleteFileFilter(t *testing.T) {
 	// create test directory and chdir to it
-	dir, err := ioutil.TempDir(os.TempDir(), "fsync_test_delete_filter")
-	check(err)
+	dir := t.TempDir()
 	check(os.Chdir(dir))
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b"), 0o644))
 
 	check(os.MkdirAll("dst", 0o755))
-	check(ioutil.WriteFile("dst/c", []byte("file c"), 0o644))
-	check(ioutil.WriteFile("dst/d", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/c", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/d", []byte("file c"), 0o644))
 
 	// create Syncer
 	s := NewSyncer()
@@ -188,17 +185,16 @@ func TestDeleteFileFilter(t *testing.T) {
 
 func TestDeleteFileFilterNotSet(t *testing.T) {
 	// create test directory and chdir to it
-	dir, err := ioutil.TempDir(os.TempDir(), "fsync_test_delete_filter")
-	check(err)
+	dir := t.TempDir()
 	check(os.Chdir(dir))
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b"), 0o644))
 
 	check(os.MkdirAll("dst", 0o755))
-	check(ioutil.WriteFile("dst/c", []byte("file c"), 0o644))
-	check(ioutil.WriteFile("dst/d", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/c", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/d", []byte("file c"), 0o644))
 
 	// create Syncer
 	s := NewSyncer()
@@ -221,7 +217,7 @@ func TestDeleteFileFilterNotSet(t *testing.T) {
 
 func testFile(name string, b []byte, t *testing.T) {
 	testExistence(name, true, t)
-	c, err := ioutil.ReadFile(name)
+	c, err := os.ReadFile(name)
 	check(err)
 	if !bytes.Equal(b, c) {
 		t.Errorf("content of file \"%s\" is:\n%s\nexpected:\n%s\n",
@@ -245,7 +241,7 @@ func testExistence(name string, e bool, t *testing.T) {
 }
 
 func testDirContents(name string, count int, t *testing.T) {
-	files, err := ioutil.ReadDir(name)
+	files, err := os.ReadDir(name)
 	check(err)
 	if len(files) != count {
 		t.Errorf("directory \"%s\" has %d children, shoud have %d.\n",
