@@ -160,6 +160,7 @@ func (s *Syncer) sync(dst, src string) {
 		// delete dst if its a directory
 		if dstat != nil && dstat.IsDir() {
 			check(s.DestFs.RemoveAll(dst))
+			dstat = nil
 		}
 		if !s.equal(dst, src, dstat, sstat) {
 			// perform copy

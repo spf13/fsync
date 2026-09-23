@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 func TestSync(t *testing.T) {
@@ -91,6 +93,28 @@ func TestSync(t *testing.T) {
 		t.Errorf("expecting ErrFileOverDir, got nothing.\n")
 	} else if err != nil && err != ErrFileOverDir {
 		panic(err)
+	}
+}
+
+// A directory in MemMapFs reports a size of 42, as does a directory on
+// Windows (0) when the source file is empty. The stale directory FileInfo
+// must not be used to compare the removed dst with the src file.
+func TestFileOverDirSameSize(t *testing.T) {
+	src := afero.NewMemMapFs()
+	dst := afero.NewMemMapFs()
+	content := bytes.Repeat([]byte("x"), 42)
+	check(afero.WriteFile(src, "a", content, 0644))
+	check(dst.MkdirAll("a", 0755))
+
+	s := NewSyncer()
+	s.SrcFs = src
+	s.DestFs = dst
+	check(s.Sync("a", "a"))
+
+	b, err := afero.ReadFile(dst, "a")
+	check(err)
+	if !bytes.Equal(b, content) {
+		t.Fatalf("got %q", b)
 	}
 }
 
