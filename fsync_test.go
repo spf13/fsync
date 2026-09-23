@@ -19,9 +19,9 @@ func TestSync(t *testing.T) {
 	check(os.Chdir(dir))
 
 	// create test files and directories
-	check(os.MkdirAll("src/a", 0755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0644))
-	check(ioutil.WriteFile("src/c", []byte("file c"), 0644))
+	check(os.MkdirAll("src/a", 0o755))
+	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(ioutil.WriteFile("src/c", []byte("file c"), 0o644))
 	// set times in the past to make sure times are synced, not accidentally
 	// the same
 	tt := time.Now().Add(-1 * time.Hour)
@@ -56,8 +56,8 @@ func TestSync(t *testing.T) {
 	testModTime("dst", getModTime("src"), t)
 
 	// modify src
-	check(ioutil.WriteFile("src/a/b", []byte("file b changed"), 0644))
-	check(os.Chmod("src/a", 0775))
+	check(ioutil.WriteFile("src/a/b", []byte("file b changed"), 0o644))
+	check(os.Chmod("src/a", 0o775))
 
 	// sync
 	check(s.Sync("dst", "src"))
@@ -103,8 +103,8 @@ func TestFileOverDirSameSize(t *testing.T) {
 	src := afero.NewMemMapFs()
 	dst := afero.NewMemMapFs()
 	content := bytes.Repeat([]byte("x"), 42)
-	check(afero.WriteFile(src, "a", content, 0644))
-	check(dst.MkdirAll("a", 0755))
+	check(afero.WriteFile(src, "a", content, 0o644))
+	check(dst.MkdirAll("a", 0o755))
 
 	s := NewSyncer()
 	s.SrcFs = src
@@ -125,12 +125,12 @@ func TestDeleteFileFilter(t *testing.T) {
 	check(os.Chdir(dir))
 
 	// create test files and directories
-	check(os.MkdirAll("src/a", 0755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0644))
+	check(os.MkdirAll("src/a", 0o755))
+	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
 
-	check(os.MkdirAll("dst", 0755))
-	check(ioutil.WriteFile("dst/c", []byte("file c"), 0644))
-	check(ioutil.WriteFile("dst/d", []byte("file c"), 0644))
+	check(os.MkdirAll("dst", 0o755))
+	check(ioutil.WriteFile("dst/c", []byte("file c"), 0o644))
+	check(ioutil.WriteFile("dst/d", []byte("file c"), 0o644))
 
 	// create Syncer
 	s := NewSyncer()
@@ -140,7 +140,7 @@ func TestDeleteFileFilter(t *testing.T) {
 		return f.Name() == "d"
 	}
 
-	//precondition; dst contains 2 files `c` and `d`
+	// precondition; dst contains 2 files `c` and `d`
 	testDirContents("dst", 2, t)
 	testExistence("dst/c", true, t)
 	testExistence("dst/d", true, t)
@@ -162,18 +162,18 @@ func TestDeleteFileFilterNotSet(t *testing.T) {
 	check(os.Chdir(dir))
 
 	// create test files and directories
-	check(os.MkdirAll("src/a", 0755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0644))
+	check(os.MkdirAll("src/a", 0o755))
+	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
 
-	check(os.MkdirAll("dst", 0755))
-	check(ioutil.WriteFile("dst/c", []byte("file c"), 0644))
-	check(ioutil.WriteFile("dst/d", []byte("file c"), 0644))
+	check(os.MkdirAll("dst", 0o755))
+	check(ioutil.WriteFile("dst/c", []byte("file c"), 0o644))
+	check(ioutil.WriteFile("dst/d", []byte("file c"), 0o644))
 
 	// create Syncer
 	s := NewSyncer()
 	s.Delete = true
 
-	//precondition; dst contains 2 files `c` and `d`
+	// precondition; dst contains 2 files `c` and `d`
 	testDirContents("dst", 2, t)
 	testExistence("dst/c", true, t)
 	testExistence("dst/d", true, t)
@@ -251,13 +251,7 @@ func getModTime(name string) time.Time {
 }
 
 func BenchmarkSync(b *testing.B) {
-	createTempDir := func() string {
-		tempDir, err := ioutil.TempDir(os.TempDir(), "fsync_test")
-		check(err)
-		return tempDir
-	}
-
-	tempDir := createTempDir()
+	tempDir := b.TempDir()
 
 	createSomeFiles := func(dirname string) {
 		for i := 0; i < 5; i++ {
@@ -274,7 +268,7 @@ func BenchmarkSync(b *testing.B) {
 		dirname := ""
 		for i := 0; i < level; i++ {
 			dirname = filepath.Join(dirname, fmt.Sprintf("dir%d", i))
-			err := os.MkdirAll(filepath.Join(tempDir, dirname), 0755)
+			err := os.MkdirAll(filepath.Join(tempDir, dirname), 0o755)
 			if err != nil && !os.IsExist(err) {
 				b.Fatal(err)
 			}
@@ -284,15 +278,27 @@ func BenchmarkSync(b *testing.B) {
 
 	src := tempDir
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		dst := createTempDir()
+
+	b.Run("No changes", func(b *testing.B) {
+		dst := b.TempDir()
 		s := NewSyncer()
 		check(s.SyncTo(dst, filepath.Join(src, "dir0")))
-		b.StopTimer()
-		check(os.RemoveAll(src))
-		src = dst
-		b.StartTimer()
+		b.ResetTimer()
+		for b.Loop() {
+			s := NewSyncer()
+			check(s.SyncTo(dst, filepath.Join(src, "dir0")))
+		}
+	})
 
-	}
-
+	b.Run("Empty dst", func(b *testing.B) {
+		for b.Loop() {
+			dst := b.TempDir()
+			s := NewSyncer()
+			check(s.SyncTo(dst, filepath.Join(src, "dir0")))
+			b.StopTimer()
+			check(os.RemoveAll(src))
+			src = dst
+			b.StartTimer()
+		}
+	})
 }
