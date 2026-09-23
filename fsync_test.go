@@ -3,7 +3,6 @@ package fsync
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,14 +13,13 @@ import (
 
 func TestSync(t *testing.T) {
 	// create test directory and chdir to it
-	dir, err := ioutil.TempDir(os.TempDir(), "fsync_test")
-	check(err)
-	check(os.Chdir(dir))
+	dir := t.TempDir()
+	t.Chdir(dir)
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
-	check(ioutil.WriteFile("src/c", []byte("file c"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(os.WriteFile("src/c", []byte("file c"), 0o644))
 	// set times in the past to make sure times are synced, not accidentally
 	// the same
 	tt := time.Now().Add(-1 * time.Hour)
@@ -56,7 +54,7 @@ func TestSync(t *testing.T) {
 	testModTime("dst", getModTime("src"), t)
 
 	// modify src
-	check(ioutil.WriteFile("src/a/b", []byte("file b changed"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b changed"), 0o644))
 	check(os.Chmod("src/a", 0o775))
 
 	// sync
@@ -89,7 +87,7 @@ func TestSync(t *testing.T) {
 	testExistence("dst/c", false, t)
 
 	s.Delete = false
-	if err = s.Sync("dst", "src/a/b"); err == nil {
+	if err := s.Sync("dst", "src/a/b"); err == nil {
 		t.Errorf("expecting ErrFileOverDir, got nothing.\n")
 	} else if err != nil && err != ErrFileOverDir {
 		panic(err)
@@ -118,19 +116,49 @@ func TestFileOverDirSameSize(t *testing.T) {
 	}
 }
 
+func TestEquality(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// a file should obviously be equal to itself
+	check(os.MkdirAll("src/", 0o755))
+	check(os.WriteFile("src/a", []byte("file a"), 0o644))
+	testEqual("src/a", "src/a", t)
+
+	// even if's referred to by different ways
+	testEqual("src/a", "./src/a", t)
+
+	t.Run("symbolic links", func(t *testing.T) {
+		check(os.MkdirAll("dst/symlink", 0o755))
+		// (need a ../.. in the symlink because that's the name of the file from the new
+		// file's perspective; in a hard link, it's the name from *our* perspective)
+		if err := os.Symlink("../../src/a", "dst/symlink/b"); err != nil {
+			t.Skipf("No symbolic links allowed? %v", err)
+		}
+		testEqual("src/a", "dst/symlink/b", t)
+	})
+
+	t.Run("hard links", func(t *testing.T) {
+		check(os.MkdirAll("dst/hardlink", 0o755))
+		if err := os.Link("src/a", "dst/hardlink/b"); err != nil {
+			t.Skipf("No hard links allowed? %v", err)
+		}
+		testEqual("src/a", "dst/hardlink/b", t)
+	})
+}
+
 func TestDeleteFileFilter(t *testing.T) {
 	// create test directory and chdir to it
-	dir, err := ioutil.TempDir(os.TempDir(), "fsync_test_delete_filter")
-	check(err)
-	check(os.Chdir(dir))
+	dir := t.TempDir()
+	t.Chdir(dir)
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b"), 0o644))
 
 	check(os.MkdirAll("dst", 0o755))
-	check(ioutil.WriteFile("dst/c", []byte("file c"), 0o644))
-	check(ioutil.WriteFile("dst/d", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/c", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/d", []byte("file c"), 0o644))
 
 	// create Syncer
 	s := NewSyncer()
@@ -157,17 +185,16 @@ func TestDeleteFileFilter(t *testing.T) {
 
 func TestDeleteFileFilterNotSet(t *testing.T) {
 	// create test directory and chdir to it
-	dir, err := ioutil.TempDir(os.TempDir(), "fsync_test_delete_filter")
-	check(err)
-	check(os.Chdir(dir))
+	dir := t.TempDir()
+	t.Chdir(dir)
 
 	// create test files and directories
 	check(os.MkdirAll("src/a", 0o755))
-	check(ioutil.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(os.WriteFile("src/a/b", []byte("file b"), 0o644))
 
 	check(os.MkdirAll("dst", 0o755))
-	check(ioutil.WriteFile("dst/c", []byte("file c"), 0o644))
-	check(ioutil.WriteFile("dst/d", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/c", []byte("file c"), 0o644))
+	check(os.WriteFile("dst/d", []byte("file c"), 0o644))
 
 	// create Syncer
 	s := NewSyncer()
@@ -190,7 +217,7 @@ func TestDeleteFileFilterNotSet(t *testing.T) {
 
 func testFile(name string, b []byte, t *testing.T) {
 	testExistence(name, true, t)
-	c, err := ioutil.ReadFile(name)
+	c, err := os.ReadFile(name)
 	check(err)
 	if !bytes.Equal(b, c) {
 		t.Errorf("content of file \"%s\" is:\n%s\nexpected:\n%s\n",
@@ -214,7 +241,7 @@ func testExistence(name string, e bool, t *testing.T) {
 }
 
 func testDirContents(name string, count int, t *testing.T) {
-	files, err := ioutil.ReadDir(name)
+	files, err := os.ReadDir(name)
 	check(err)
 	if len(files) != count {
 		t.Errorf("directory \"%s\" has %d children, shoud have %d.\n",
@@ -235,6 +262,21 @@ func testModTime(name string, m time.Time, t *testing.T) {
 	if !m2.Equal(m) {
 		t.Errorf("modification time for \"%s\" is %v, should be %v.\n",
 			name, m2, m)
+	}
+}
+
+func testEqual(src, dst string, t *testing.T) {
+	s := NewSyncer()
+	s.checkContents = func(s *Syncer, dst, src string) bool {
+		t.Errorf("Asked to look at file contents of %s vs %s", dst, src)
+		return false
+	}
+	dstat, err := s.DestFs.Stat(dst)
+	check(err)
+	sstat, err := s.SrcFs.Stat(src)
+	check(err)
+	if !s.equal(dst, src, dstat, sstat) {
+		t.Errorf("Files %s and %s unexpectedly different", dst, src)
 	}
 }
 

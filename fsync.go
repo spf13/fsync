@@ -42,7 +42,8 @@ import (
 )
 
 var ErrFileOverDir = errors.New(
-	"fsync: trying to overwrite a non-empty directory with a file")
+	"fsync: trying to overwrite a non-empty directory with a file",
+)
 
 // FileInfo contains the shared methods between os.FileInfo and fs.DirEntry.
 type FileInfo interface {
@@ -82,6 +83,8 @@ type Syncer struct {
 
 	SrcFs  afero.Fs
 	DestFs afero.Fs
+
+	checkContents func(s *Syncer, dst, src string) bool
 }
 
 // NewSyncer creates a new instance of Syncer with default options.
@@ -90,6 +93,7 @@ func NewSyncer() *Syncer {
 	s.DeleteFilter = func(f FileInfo) bool {
 		return false
 	}
+	s.checkContents = defaultCheckContents
 	return &s
 }
 
@@ -256,8 +260,15 @@ func (s *Syncer) syncstats(dst, src string) {
 
 // equal returns true if both dst and src files are equal
 func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
+	// if at least one of the files doesn't exist, they can't be equal
 	if sstat == nil || dstat == nil {
 		return false
+	}
+
+	// if they're the same file, they're obviously the same, irrespective of whether
+	// we dealt with differently-canonicalised filenames, symlinks or hard links
+	if os.SameFile(sstat, dstat) {
+		return true
 	}
 
 	// check sizes
@@ -265,7 +276,11 @@ func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
 		return false
 	}
 
-	// both have the same size, check the contents
+	// they might have the same contents even if they're different files
+	return s.checkContents(s, dst, src)
+}
+
+func defaultCheckContents(s *Syncer, dst, src string) bool {
 	f1, err := s.DestFs.Open(dst)
 	check(err)
 	defer f1.Close()
