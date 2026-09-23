@@ -103,15 +103,15 @@ func TestFileOverDirSameSize(t *testing.T) {
 	src := afero.NewMemMapFs()
 	dst := afero.NewMemMapFs()
 	content := bytes.Repeat([]byte("x"), 42)
-	check(afero.WriteFile(src, "/a", content, 0644))
-	check(dst.MkdirAll("/a", 0755))
+	check(afero.WriteFile(src, "a", content, 0644))
+	check(dst.MkdirAll("a", 0755))
 
 	s := NewSyncer()
 	s.SrcFs = src
 	s.DestFs = dst
-	check(s.Sync("/a", "/a"))
+	check(s.Sync("a", "a"))
 
-	b, err := afero.ReadFile(dst, "/a")
+	b, err := afero.ReadFile(dst, "a")
 	check(err)
 	if !bytes.Equal(b, content) {
 		t.Fatalf("got %q", b)
