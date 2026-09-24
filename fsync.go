@@ -78,6 +78,10 @@ type Syncer struct {
 	// Implement this function to skip Chmod syncing for only certain files
 	// or directories. Return true to skip Chmod.
 	ChmodFilter func(dst, src os.FileInfo) bool
+	// Link, if set, is called to create dst as a hard link to src instead of
+	// copying it, with sstat being the FileInfo of src as returned by SrcFs.
+	// It returns false if the link could not be created, in which case src is copied.
+	Link func(dst, src string, sstat os.FileInfo) (bool, error)
 
 	// TODO add options for not checking content for equality
 
@@ -166,6 +170,9 @@ func (s *Syncer) sync(dst, src string) {
 			check(s.DestFs.RemoveAll(dst))
 			dstat = nil
 		}
+		if s.Link != nil && !sameFile(dstat, sstat) && s.link(dst, src, dstat, sstat) {
+			return
+		}
 		if !s.equal(dst, src, dstat, sstat) {
 			// perform copy
 			df, err := s.DestFs.Create(dst)
@@ -227,6 +234,28 @@ func (s *Syncer) sync(dst, src string) {
 	}
 }
 
+// link creates dst as a hard link to src, replacing any existing dst.
+// It returns false if the link could not be created.
+func (s *Syncer) link(dst, src string, dstat, sstat os.FileInfo) bool {
+	if dstat == nil {
+		linked, err := s.Link(dst, src, sstat)
+		check(err)
+		return linked
+	}
+	// Link to a temporary name first so that dst is left untouched if linking is not possible.
+	tmp := dst + ".fsynclink"
+	linked, err := s.Link(tmp, src, sstat)
+	check(err)
+	if !linked {
+		return false
+	}
+	if err := s.DestFs.Rename(tmp, dst); err != nil {
+		s.DestFs.Remove(tmp)
+		panic(err)
+	}
+	return true
+}
+
 // syncstats makes sure dst has the same pemissions and modification time as src
 func (s *Syncer) syncstats(dst, src string) {
 	// get file infos; return if not exist and panic if error
@@ -267,7 +296,7 @@ func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
 
 	// if they're the same file, they're obviously the same, irrespective of whether
 	// we dealt with differently-canonicalised filenames, symlinks or hard links
-	if os.SameFile(sstat, dstat) {
+	if sameFile(sstat, dstat) {
 		return true
 	}
 
@@ -278,6 +307,31 @@ func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
 
 	// they might have the same contents even if they're different files
 	return s.checkContents(s, dst, src)
+}
+
+// FileInfoUnwrapper is implemented by os.FileInfo wrappers to let
+// fsync compare the underlying FileInfos with os.SameFile.
+type FileInfoUnwrapper interface {
+	UnwrapFileInfo() os.FileInfo
+}
+
+// sameFile reports whether a and b describe the same file, seeing through
+// any FileInfoUnwrapper.
+func sameFile(a, b os.FileInfo) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return os.SameFile(unwrapFileInfo(a), unwrapFileInfo(b))
+}
+
+func unwrapFileInfo(fi os.FileInfo) os.FileInfo {
+	for {
+		u, ok := fi.(FileInfoUnwrapper)
+		if !ok {
+			return fi
+		}
+		fi = u.UnwrapFileInfo()
+	}
 }
 
 func defaultCheckContents(s *Syncer, dst, src string) bool {

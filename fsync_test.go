@@ -144,7 +144,111 @@ func TestEquality(t *testing.T) {
 			t.Skipf("No hard links allowed? %v", err)
 		}
 		testEqual("src/a", "dst/hardlink/b", t)
+
+		// FileInfo wrappers defeat os.SameFile unless they implement FileInfoUnwrapper.
+		a, err := os.Stat("src/a")
+		check(err)
+		b, err := os.Stat("dst/hardlink/b")
+		check(err)
+		if sameFile(opaqueFileInfo{a}, opaqueFileInfo{b}) {
+			t.Error("opaque wrappers unexpectedly detected as the same file")
+		}
+		if !sameFile(wrappedFileInfo{wrappedFileInfo{a}}, wrappedFileInfo{b}) {
+			t.Error("wrapped FileInfos not detected as the same file")
+		}
 	})
+}
+
+type opaqueFileInfo struct {
+	os.FileInfo
+}
+
+type wrappedFileInfo struct {
+	os.FileInfo
+}
+
+func (w wrappedFileInfo) UnwrapFileInfo() os.FileInfo {
+	return w.FileInfo
+}
+
+func TestLink(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	check(os.MkdirAll("src/a", 0o755))
+	check(os.WriteFile("src/a/b", []byte("file b"), 0o644))
+	check(os.WriteFile("src/c", []byte("file c"), 0o644))
+	check(os.MkdirAll("dst", 0o755))
+	// Same content, different inode; should be replaced with a link.
+	check(os.WriteFile("dst/c", []byte("file c"), 0o644))
+
+	if err := os.Link("src/c", "dst/probe"); err != nil {
+		t.Skipf("No hard links allowed? %v", err)
+	}
+	check(os.Remove("dst/probe"))
+
+	var linkCount int
+	s := NewSyncer()
+	s.Link = func(dst, src string, sstat os.FileInfo) (bool, error) {
+		linkCount++
+		return true, os.Link(src, dst)
+	}
+
+	check(s.Sync("dst", "src"))
+	testSameFile("dst/a/b", "src/a/b", true, t)
+	testSameFile("dst/c", "src/c", true, t)
+	testDirContents("dst", 2, t)
+	if linkCount != 2 {
+		t.Fatalf("expected 2 links, got %d", linkCount)
+	}
+
+	// Unchanged; nothing to link.
+	check(s.Sync("dst", "src"))
+	if linkCount != 2 {
+		t.Fatalf("expected 2 links, got %d", linkCount)
+	}
+
+	// Replace src with a new inode.
+	check(os.WriteFile("src/c.tmp", []byte("file c changed"), 0o644))
+	check(os.Rename("src/c.tmp", "src/c"))
+	check(s.Sync("dst", "src"))
+	testSameFile("dst/c", "src/c", true, t)
+	testFile("dst/c", []byte("file c changed"), t)
+	testDirContents("dst", 2, t)
+
+	// Link not possible; fall back to copy.
+	s.Link = func(dst, src string, sstat os.FileInfo) (bool, error) {
+		return false, nil
+	}
+	check(os.WriteFile("src/c.tmp", []byte("file c copied"), 0o644))
+	check(os.Rename("src/c.tmp", "src/c"))
+	check(s.Sync("dst", "src"))
+	testSameFile("dst/c", "src/c", false, t)
+	testFile("dst/c", []byte("file c copied"), t)
+	testDirContents("dst", 2, t)
+
+	// Real errors are returned.
+	linkErr := fmt.Errorf("link failed")
+	s.Link = func(dst, src string, sstat os.FileInfo) (bool, error) {
+		return false, linkErr
+	}
+	check(os.WriteFile("src/c.tmp", []byte("file c again"), 0o644))
+	check(os.Rename("src/c.tmp", "src/c"))
+	if err := s.Sync("dst", "src"); err != linkErr {
+		t.Fatalf("expected %v, got %v", linkErr, err)
+	}
+	testFile("dst/c", []byte("file c copied"), t)
+}
+
+func testSameFile(a, b string, same bool, t *testing.T) {
+	t.Helper()
+	fa, err := os.Stat(a)
+	check(err)
+	fb, err := os.Stat(b)
+	check(err)
+	if os.SameFile(fa, fb) != same {
+		t.Fatalf("expected SameFile(%s, %s) to be %t", a, b, same)
+	}
 }
 
 func TestDeleteFileFilter(t *testing.T) {
