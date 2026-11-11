@@ -147,6 +147,73 @@ func TestEquality(t *testing.T) {
 	})
 }
 
+func TestEqualQuickCheck(t *testing.T) {
+	newFs := func() (afero.Fs, afero.Fs) {
+		src := afero.NewMemMapFs()
+		dst := afero.NewMemMapFs()
+		tt := time.Now().Add(-1 * time.Hour)
+		check(afero.WriteFile(src, "a", []byte("file a"), 0o644))
+		check(src.Chtimes("a", tt, tt))
+		// Same size and modification time, different content.
+		check(afero.WriteFile(dst, "a", []byte("file A"), 0o644))
+		check(dst.Chtimes("a", tt, tt))
+		return src, dst
+	}
+
+	t.Run("Same size and modtime", func(t *testing.T) {
+		src, dst := newFs()
+		s := NewSyncer()
+		s.SrcFs, s.DestFs = src, dst
+		s.checkContents = func(s *Syncer, dst, src string) bool {
+			t.Fatalf("Asked to look at file contents of %s vs %s", dst, src)
+			return false
+		}
+		check(s.Sync("a", "a"))
+		b, err := afero.ReadFile(dst, "a")
+		check(err)
+		if string(b) != "file A" {
+			t.Fatalf("expected dst to be left untouched, got %q", b)
+		}
+	})
+
+	t.Run("NoTimes", func(t *testing.T) {
+		src, dst := newFs()
+		s := NewSyncer()
+		s.SrcFs, s.DestFs = src, dst
+		s.NoTimes = true
+		check(s.Sync("a", "a"))
+		b, err := afero.ReadFile(dst, "a")
+		check(err)
+		if string(b) != "file a" {
+			t.Fatalf("expected dst to be updated, got %q", b)
+		}
+	})
+}
+
+func TestCheckContents(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	s := NewSyncer()
+	s.SrcFs, s.DestFs = fs, fs
+
+	for _, size := range []int{0, 1, compareBufSize - 1, compareBufSize, compareBufSize + 1, 3*compareBufSize + 7} {
+		content := bytes.Repeat([]byte("x"), size)
+		check(afero.WriteFile(fs, "a", content, 0o644))
+		check(afero.WriteFile(fs, "b", content, 0o644))
+		if !defaultCheckContents(s, "a", "b") {
+			t.Errorf("size %d: expected equal", size)
+		}
+		if size == 0 {
+			continue
+		}
+		changed := bytes.Clone(content)
+		changed[size-1] = 'y'
+		check(afero.WriteFile(fs, "b", changed, 0o644))
+		if defaultCheckContents(s, "a", "b") {
+			t.Errorf("size %d: expected different", size)
+		}
+	}
+}
+
 func TestDeleteFileFilter(t *testing.T) {
 	// create test directory and chdir to it
 	dir := t.TempDir()
@@ -329,6 +396,35 @@ func BenchmarkSync(b *testing.B) {
 		for b.Loop() {
 			s := NewSyncer()
 			check(s.SyncTo(dst, filepath.Join(src, "dir0")))
+		}
+	})
+
+	createBigFile := func(dir string, size int) {
+		check(os.MkdirAll(dir, 0o755))
+		check(os.WriteFile(filepath.Join(dir, "big.bin"), bytes.Repeat([]byte("abcdefgh"), size/8), 0o644))
+	}
+
+	b.Run("Big file no changes", func(b *testing.B) {
+		src := filepath.Join(b.TempDir(), "src")
+		dst := filepath.Join(b.TempDir(), "dst")
+		createBigFile(src, 64<<20)
+		check(NewSyncer().Sync(dst, src))
+		b.ResetTimer()
+		for b.Loop() {
+			check(NewSyncer().Sync(dst, src))
+		}
+	})
+
+	b.Run("Big file no changes, modtime differs", func(b *testing.B) {
+		src := filepath.Join(b.TempDir(), "src")
+		dst := filepath.Join(b.TempDir(), "dst")
+		createBigFile(src, 64<<20)
+		createBigFile(dst, 64<<20)
+		b.ResetTimer()
+		for b.Loop() {
+			s := NewSyncer()
+			s.NoTimes = true
+			check(s.Sync(dst, src))
 		}
 	})
 
