@@ -276,9 +276,19 @@ func (s *Syncer) equal(dst, src string, dstat, sstat os.FileInfo) bool {
 		return false
 	}
 
+	// Modification times are synced after each copy, so equal sizes and
+	// modification times means the file is unchanged since the last sync.
+	// This is the same quick check rsync uses by default, and it avoids
+	// reading the full content of both files, which is expensive for big files.
+	if !s.NoTimes && !sstat.ModTime().IsZero() && dstat.ModTime().Equal(sstat.ModTime()) {
+		return true
+	}
+
 	// they might have the same contents even if they're different files
 	return s.checkContents(s, dst, src)
 }
+
+const compareBufSize = 64 * 1024
 
 func defaultCheckContents(s *Syncer, dst, src string) bool {
 	f1, err := s.DestFs.Open(dst)
@@ -287,31 +297,29 @@ func defaultCheckContents(s *Syncer, dst, src string) bool {
 	f2, err := s.SrcFs.Open(src)
 	check(err)
 	defer f2.Close()
-	buf1 := make([]byte, 1000)
-	buf2 := make([]byte, 1000)
+	buf1 := make([]byte, compareBufSize)
+	buf2 := make([]byte, compareBufSize)
 	for {
-		// read from both
-		n1, err := f1.Read(buf1)
-		if err != nil && err != io.EOF {
-			panic(err)
+		// io.ReadFull guarantees that n1 and n2 only differ at EOF,
+		// even if a Read returns fewer bytes than requested.
+		n1, err1 := io.ReadFull(f1, buf1)
+		if err1 != nil && err1 != io.EOF && err1 != io.ErrUnexpectedEOF {
+			panic(err1)
 		}
-		n2, err := f2.Read(buf2)
-		if err != nil && err != io.EOF {
-			panic(err)
+		n2, err2 := io.ReadFull(f2, buf2)
+		if err2 != nil && err2 != io.EOF && err2 != io.ErrUnexpectedEOF {
+			panic(err2)
 		}
 
-		// compare read bytes
 		if !bytes.Equal(buf1[:n1], buf2[:n2]) {
 			return false
 		}
 
-		// end of both files
-		if n1 == 0 && n2 == 0 {
-			break
+		// Equal bytes means both files ended at the same position.
+		if err1 != nil {
+			return true
 		}
 	}
-
-	return true
 }
 
 // checkDir returns true if dst is a non-empty directory and src is a file
